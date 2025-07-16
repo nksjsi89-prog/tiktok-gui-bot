@@ -32,10 +32,7 @@ class TikTokBot(threading.Thread):
         for idx, (i, acc) in enumerate(self.accounts, start=1):
             if self.stop_flag.is_set(): break
             self.log(f"🔐 Account {idx}/{self.total} – Logging in: {acc['username']}")
-            options = uc.ChromeOptions()
-            options.add_argument("--disable-notifications")
-            options.add_argument("--start-maximized")
-            driver = uc.Chrome(options=options)
+            driver = uc.Chrome(options=uc.ChromeOptions().add_argument("--disable-notifications"))
             try:
                 if self.login(driver, acc['username'], acc['password']):
                     for target in self.targets:
@@ -69,8 +66,11 @@ class TikTokBot(threading.Thread):
         wait_random(4, 7)
         try:
             btn = driver.find_element(By.XPATH, "//button[contains(text(), 'Follow')]")
-            btn.click()
-            self.log(f"👍 Followed @{target}")
+            if btn.text.strip().lower() == "follow":
+                btn.click()
+                self.log(f"👍 Followed @{target}")
+            else:
+                self.log(f"✅ Already following @{target}")
             wait_random()
             videos = driver.find_elements(By.XPATH, '//div[@data-e2e="user-post-item"]//a')
             self.log(f"📹 {len(videos)} videos found")
@@ -79,10 +79,11 @@ class TikTokBot(threading.Thread):
                 url = v.get_attribute("href")
                 driver.get(url); wait_random(3, 5)
                 try:
-                    driver.find_element(By.XPATH, '//span[contains(@class, "like-icon")]').click()
+                    like_btn = driver.find_element(By.XPATH, '//span[contains(@class,"like-icon") and not(contains(@class,"liked"))]')
+                    like_btn.click()
                     self.log(f"❤️ Liked {url}")
                 except Exception:
-                    self.log(f"⚠️ Like failed: {url}")
+                    self.log(f"✅ Already liked or unavailable on {url}")
                 wait_random()
         except Exception as e:
             self.log(f"⚠️ Error on @{target}: {e}")
@@ -106,40 +107,31 @@ class Application(tk.Tk):
         self.targets = []
         self.bot = None
         self.build()
-        if os.path.exists(LOG_FILE):
-            open(LOG_FILE,'a').close()
+        if os.path.exists(LOG_FILE): open(LOG_FILE,'a').close()
 
     def build(self):
-        frm = ttk.Frame(self)
-        frm.pack(padx=10, pady=10, fill='x')
+        frm = ttk.Frame(self); frm.pack(padx=10, pady=10, fill='x')
         ttk.Button(frm, text="Load Accounts", command=self.load_accounts).pack(side='left', padx=5)
         ttk.Button(frm, text="Load Targets", command=self.load_targets).pack(side='left', padx=5)
         self.acc_var = tk.BooleanVar()
         ttk.Checkbutton(frm, text="Select All Accounts", variable=self.acc_var, command=self.toggle_all).pack(side='left')
-        self.listbox = tk.Listbox(self, selectmode=tk.MULTIPLE, height=6)
-        self.listbox.pack(fill='x', padx=10, pady=5)
-        btns = ttk.Frame(self)
-        btns.pack(padx=10, pady=5)
+        self.listbox = tk.Listbox(self, selectmode=tk.MULTIPLE, height=6); self.listbox.pack(fill='x', padx=10, pady=5)
+        btns = ttk.Frame(self); btns.pack(padx=10, pady=5)
         self.start_btn = ttk.Button(btns, text="▶️ Start", command=self.start)
         self.pause_btn = ttk.Button(btns, text="⏸️ Pause", command=self.pause, state='disabled')
         self.stop_btn = ttk.Button(btns, text="⛔ Stop", command=self.stop, state='disabled')
-        self.start_btn.pack(side='left', padx=5)
-        self.pause_btn.pack(side='left', padx=5)
-        self.stop_btn.pack(side='left', padx=5)
-        self.log = scrolledtext.ScrolledText(self, height=25)
-        self.log.pack(fill='both', padx=10, pady=5)
+        self.start_btn.pack(side='left', padx=5); self.pause_btn.pack(side='left', padx=5); self.stop_btn.pack(side='left', padx=5)
+        self.log = scrolledtext.ScrolledText(self, height=25); self.log.pack(fill='both', padx=10, pady=5)
 
     def load_accounts(self):
         df = pd.read_csv("accounts.csv")
         self.accounts = list(df.to_dict("records"))
         self.listbox.delete(0,'end')
-        for acc in self.accounts:
-            self.listbox.insert('end', acc['username'])
+        for acc in self.accounts: self.listbox.insert('end', acc['username'])
         self.log_msg(f"✅ Loaded {len(self.accounts)} accounts")
 
     def load_targets(self):
-        with open("targets.txt") as f:
-            self.targets = [l.strip() for l in f if l.strip()]
+        with open("targets.txt") as f: self.targets = [l.strip() for l in f if l.strip()]
         self.log_msg(f"✅ Loaded {len(self.targets)} targets")
 
     def toggle_all(self):
@@ -149,9 +141,7 @@ class Application(tk.Tk):
 
     def start(self):
         sel = self.listbox.curselection()
-        if not sel:
-            messagebox.showwarning("Warning","Select at least one account")
-            return
+        if not sel: messagebox.showwarning("Warning","Select at least one account"); return
         accounts = [(i,self.accounts[i]) for i in sel]
         self.bot = TikTokBot(accounts, self.targets, self.log_msg, {'on_done':self.on_done})
         self.bot.start()
@@ -168,9 +158,7 @@ class Application(tk.Tk):
         self.bot.stop(); self.log_msg("🛑 Stopping bot...")
 
     def on_done(self):
-        self.start_btn.config(state='normal')
-        self.pause_btn.config(state='disabled')
-        self.stop_btn.config(state='disabled')
+        self.start_btn.config(state='normal'); self.pause_btn.config(state='disabled'); self.stop_btn.config(state='disabled')
         self.log_msg("✅ Bot finished")
 
     def log_msg(self, msg):
